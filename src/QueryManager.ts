@@ -322,35 +322,6 @@ export class QueryManager {
       requestId,
     });
 
-    if (minimizedQuery) {
-      const request: Request = {
-        query: minimizedQueryString,
-        variables,
-      };
-
-     return this.networkInterface.query(request)
-        .then((result: GraphQLResult) => {
-          // XXX handle multiple GraphQLResults
-          this.store.dispatch({
-            type: 'QUERY_RESULT',
-            result,
-            queryId,
-            requestId,
-          });
-
-          return result;
-        }).catch((error: Error) => {
-          this.store.dispatch({
-            type: 'QUERY_ERROR',
-            error,
-            queryId,
-            requestId,
-          });
-
-          return error;
-        });
-    }
-
     if (! minimizedQuery || returnPartialData) {
       this.store.dispatch({
         type: 'QUERY_RESULT_CLIENT',
@@ -362,7 +333,57 @@ export class QueryManager {
         complete: !! minimizedQuery,
         queryId,
       });
+    }
 
+    if (minimizedQuery) {
+      const request: Request = {
+        query: minimizedQueryString,
+        variables,
+      };
+
+      return this.networkInterface.query(request)
+        .then((result: GraphQLResult) => {
+          // XXX handle multiple GraphQLResults
+          this.store.dispatch({
+            type: 'QUERY_RESULT',
+            result,
+            queryId,
+            requestId,
+          });
+
+          return result;
+        }).then((result: GraphQLResult) => {
+
+          let resultFromStore;
+          try {
+            // ensure result is combined with data already in store
+            resultFromStore = readSelectionSetFromStore({
+              store: this.getApolloState().data,
+              rootId: querySS.id,
+              selectionSet: querySS.selectionSet,
+              variables,
+              returnPartialData: returnPartialData,
+            });
+          // ensure multiple errors don't get thrown
+          /* tslint:disable */
+          } catch (e) {}
+          /* tslint:enable */
+
+          // return a chainable promise
+          return new Promise((resolve) => {
+            resolve({ data: resultFromStore });
+          });
+        }).catch((error: Error) => {
+          this.store.dispatch({
+            type: 'QUERY_ERROR',
+            error,
+            queryId,
+            requestId,
+          });
+
+          return error;
+        });
+    } else {
       // return a chainable promise
       return new Promise((resolve) => {
         resolve({ data: initialResult });
